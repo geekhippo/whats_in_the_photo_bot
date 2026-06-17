@@ -17,8 +17,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
 # Бесплатные Vision-модели на OpenRouter
-# Варианты: "google/gemini-2.0-flash-free", "meta-llama/llama-3.2-11b-vision-instruct:free"
-VISION_MODEL = "google/gemini-2.0-flash-free"
+VISION_MODEL = "meta-llama/llama-3.2-11b-vision-instruct:free"
 
 # ─── Логирование ───
 logging.basicConfig(
