@@ -9,7 +9,8 @@ import io
 from PIL import Image
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 # ─── Настройки ───
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -23,8 +24,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ─── Gemini ───
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 # ─── Статистика ───
 STATS_FILE = "/app/data/stats.json"
@@ -149,13 +149,16 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             background.paste(image, mask=image.split()[-1] if image.mode in ('RGBA', 'LA') else None)
             image = background
 
-        # Отправляем в Gemini
-        response = model.generate_content([
-            "Опиши подробно что на этом изображении. Ответь на русском языке. "
-            "Если на изображении есть текст — также прочитай и переведи его. "
-            "Будь максимально детальным.",
-            image
-        ])
+        # Отправляем в Gemini (новый API)
+        response = client.models.generate_content(
+            model='gemini-1.5-flash',
+            contents=[
+                "Опиши подробно что на этом изображении. Ответь на русском языке. "
+                "Если на изображении есть текст — также прочитай и переведи его. "
+                "Будь максимально детальным.",
+                types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg')
+            ]
+        )
 
         # Отправляем ответ
         description = response.text if response.text else "Не удалось получить описание."
