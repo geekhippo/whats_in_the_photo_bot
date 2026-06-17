@@ -1,15 +1,16 @@
 # 📸 What's in the Photo Bot
 
-Telegram-бот для анализа изображений с помощью Google Gemini AI.
+Telegram-бот для анализа изображений с помощью AI.
 Отправьте боту фото или картинку — и получите подробное описание на русском языке.
 
 ## ✨ Возможности
 
 - 📸 **Анализ фото** — подробное описание что на изображении
 - 🔤 **Распознавание текста** — читает и переводит текст на фото
-- 🎨 **Понимание контекста** — Gemini 1.5 Flash анализирует сцену, объекты, цвета
+- 🎨 **Понимание контекста** — AI анализирует сцену, объекты, цвета
 - 📊 **Статистика** — команда /stats
 - 🐳 **Docker** — простое развертывание
+- 🔄 **Автоматическое разбиение** — длинные ответы разбиваются на части
 
 ## 🚀 Быстрый старт
 
@@ -28,7 +29,7 @@ cd whats_in_the_photo_bot
 
 # 2. Создайте .env с токенами
 echo "TELEGRAM_TOKEN=ваш_токен" > .env
-echo "GEMINI_API_KEY=ваш_ключ_gemini" >> .env
+echo "OPENROUTER_API_KEY=ваш_ключ_openrouter" >> .env
 
 # 3. Соберите и запустите
 docker build -t whats-in-the-photo-bot .
@@ -44,10 +45,10 @@ docker run --name whats-in-the-photo-bot --env-file .env -d --restart unless-sto
 3. Следуйте инструкциям — получите токен вида `123456:ABC-DEF1234gh...`
 4. Вставьте токен в файл `.env`
 
-### Google Gemini API Key
+### OpenRouter API Key
 
-1. Перейдите на [aistudio.google.com/apikey](https://aistudio.google.com/apikey)
-2. Создайте бесплатный аккаунт Google
+1. Перейдите на [openrouter.ai](https://openrouter.ai/keys)
+2. Зарегистрируйтесь (бесплатно)
 3. Создайте API-ключ
 4. Вставьте ключ в файл `.env`
 
@@ -55,7 +56,7 @@ docker run --name whats-in-the-photo-bot --env-file .env -d --restart unless-sto
 
 1. Добавьте бота в чат или начните личный диалог
 2. Отправьте фото или картинку
-3. Бот проанализирует изображение через Gemini AI
+3. Бот проанализирует изображение через AI
 4. Получите подробное описание на русском языке
 
 ## 📁 Структура проекта
@@ -91,15 +92,16 @@ cd whats_in_the_photo_bot && git pull && docker build -t whats-in-the-photo-bot 
 ## 📦 Зависимости
 
 - [python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot) — работа с Telegram API
-- [google-generativeai](https://github.com/google/generative-ai-python) — Google Gemini AI
+- [httpx](https://github.com/encode/httpx) — HTTP-клиент для OpenRouter API
 - [Pillow](https://python-pillow.org/) — обработка изображений
 
 ## 🤖 Модель
 
-Используется **Google Gemini 1.5 Flash** — быстрая и точная мультимодальная модель:
-- Бесплатный тариф: 15 запросов/минуту
-- Поддержка изображений до 20 МБ
-- Отличное качество описания на русском языке
+Используется **nex-agi/nex-n2-pro:free** через OpenRouter:
+- Бесплатный тариф
+- Поддержка изображений
+- Контекст: 262K токенов
+- Качественное описание на русском языке
 
 ## 📄 Лицензия
 

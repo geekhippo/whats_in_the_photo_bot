@@ -16,13 +16,13 @@ cd whats_in_the_photo_bot
 # Запрос данных
 echo "📝 Нам понадобятся ключи для работы бота."
 read -p "Введите TELEGRAM_TOKEN: " TELEGRAM_TOKEN < /dev/tty
-echo "🔑 Нужен Google Gemini API Key."
-echo "   Получить бесплатно: https://aistudio.google.com/apikey"
-read -p "Введите GEMINI_API_KEY: " GEMINI_API_KEY < /dev/tty
+echo "🔑 Нужен OpenRouter API Key."
+echo "   Получить бесплатно: https://openrouter.ai/keys"
+read -p "Введите OPENROUTER_API_KEY: " OPENROUTER_API_KEY < /dev/tty
 
 cat <<EOF > .env
 TELEGRAM_TOKEN=$TELEGRAM_TOKEN
-GEMINI_API_KEY=$GEMINI_API_KEY
+OPENROUTER_API_KEY=$OPENROUTER_API_KEY
 EOF
 
 # Скачивание файлов
@@ -41,7 +41,7 @@ docker run --name whats-in-the-photo-bot --env-file .env -d --restart unless-sto
 echo "🎉 Готово! What's in the Photo Bot запущен."
 echo ""
 echo "Возможности бота:"
-echo "  📸 Анализ фото и картинок через Gemini AI"
+echo "  📸 Анализ фото и картинок через AI"
 echo "  📝 Подробное описание на русском языке"
 echo "  🔤 Распознавание текста на изображениях"
 echo "  📊 Команда /stats"
