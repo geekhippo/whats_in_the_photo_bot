@@ -1,23 +1,20 @@
 """
 What's in the Photo Bot — Telegram бот для описания изображений
-Использует OpenRouter с бесплатными Vision-моделями
+Использует Google Gemini 2.0 Flash для анализа фотографий
 """
 
 import os
 import logging
 import io
-import base64
 from PIL import Image
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
-import httpx
+from google import genai
+from google.genai import types
 
 # ─── Настройки ───
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-
-# Бесплатные Vision-модели на OpenRouter
-VISION_MODEL = "meta-llama/llama-3.2-11b-vision-instruct:free"
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # ─── Логирование ───
 logging.basicConfig(
@@ -25,6 +22,9 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# ─── Gemini ───
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 # ─── Статистика ───
 STATS_FILE = "/app/data/stats.json"
@@ -61,55 +61,27 @@ def _record_usage(user_id, username=None):
 
 
 async def analyze_image(image_bytes: bytes) -> str:
-    """Отправляет изображение в OpenRouter Vision API."""
-    # Конвертируем в base64
-    image_b64 = base64.b64encode(image_bytes).decode('utf-8')
-    
-    # Определяем MIME type
+    """Отправляет изображение в Gemini Vision API."""
     image = Image.open(io.BytesIO(image_bytes))
-    mime_type = "image/jpeg"
-    if image.format == "PNG":
-        mime_type = "image/png"
-    elif image.format == "WEBP":
-        mime_type = "image/webp"
-    elif image.format == "GIF":
-        mime_type = "image/gif"
+    
+    # Конвертируем в RGB если нужно
+    if image.mode in ('RGBA', 'LA', 'P'):
+        background = Image.new('RGB', image.size, (255, 255, 255))
+        if image.mode == 'P':
+            image = image.convert('RGBA')
+        background.paste(image, mask=image.split()[-1] if image.mode in ('RGBA', 'LA') else None)
+        image = background
 
-    data_url = f"data:{mime_type};base64,{image_b64}"
-
-    async with httpx.AsyncClient(timeout=60) as client:
-        response = await client.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": VISION_MODEL,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": "Опиши подробно что на этом изображении. Ответь на русском языке. "
-                                         "Если на изображении есть текст — также прочитай и переведи его. "
-                                         "Будь максимально детальным."
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": data_url
-                                }
-                            }
-                        ]
-                    }
-                ]
-            }
-        )
-        response.raise_for_status()
-        result = response.json()
-        return result["choices"][0]["message"]["content"]
+    response = client.models.generate_content(
+        model='gemini-2.0-flash',
+        contents=[
+            "Опиши подробно что на этом изображении. Ответь на русском языке. "
+            "Если на изображении есть текст — также прочитай и переведи его. "
+            "Будь максимально детальным.",
+            types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg')
+        ]
+    )
+    return response.text if response.text else "Не удалось получить описание."
 
 
 # ─── Команды ───
@@ -127,12 +99,12 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📋 Как пользоваться:\n\n"
         "1️⃣ Отправьте фото или картинку\n"
-        "2️⃣ Я проанализирую изображение через AI\n"
+        "2️⃣ Я проанализирую изображение через Gemini AI\n"
         "3️⃣ Получите подробное описание на русском языке\n\n"
         "⚠️ Лимиты:\n"
         "- Максимальный размер фото: 20 МБ\n"
         "- Поддерживаемые форматы: JPG, PNG, WEBP, GIF\n\n"
-        f"🤖 Модель: {VISION_MODEL}"
+        "🤖 Модель: Google Gemini 2.0 Flash"
     )
 
 
@@ -184,7 +156,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             file = await context.bot.get_file(document.file_id)
 
         image_bytes = await file.download_as_bytearray()
-
         description = await analyze_image(image_bytes)
 
         # Telegram лимит — 4096 символов
@@ -205,12 +176,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await msg.reply_text("📸 Описание:\n\n" + description)
 
-    except httpx.HTTPStatusError as e:
-        logger.error(f"OpenRouter API error: {e.response.text}")
-        await msg.reply_text(f"❌ Ошибка API: {e.response.status_code}. Попробуйте позже.")
     except Exception as e:
         logger.error(f"Ошибка при обработке изображения: {e}")
-        await msg.reply_text(f"❌ Ошибка при анализе изображения: {e}")
+        error_str = str(e)
+        if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+            await msg.reply_text("⚠️ Превышен лимит запросов к Gemini API. Попробуйте позже.")
+        elif "401" in error_str or "Unauthorized" in error_str:
+            await msg.reply_text("❌ Ошибка авторизации Gemini API. Проверьте API-ключ.")
+        else:
+            await msg.reply_text(f"❌ Ошибка при анализе изображения: {e}")
 
 
 # ─── Обработка текстовых сообщений ───
@@ -226,8 +200,8 @@ if __name__ == '__main__':
     if not TELEGRAM_TOKEN:
         logger.error("TELEGRAM_TOKEN не задан!")
         exit(1)
-    if not OPENROUTER_API_KEY:
-        logger.error("OPENROUTER_API_KEY не задан!")
+    if not GEMINI_API_KEY:
+        logger.error("GEMINI_API_KEY не задан!")
         exit(1)
 
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
