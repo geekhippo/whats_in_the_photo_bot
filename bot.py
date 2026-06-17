@@ -151,7 +151,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Отправляем в Gemini (новый API)
         response = client.models.generate_content(
-            model='gemini-1.5-flash',
+            model='gemini-2.0-flash',
             contents=[
                 "Опиши подробно что на этом изображении. Ответь на русском языке. "
                 "Если на изображении есть текст — также прочитай и переведи его. "
