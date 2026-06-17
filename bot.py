@@ -103,7 +103,15 @@ async def analyze_image(image_bytes: bytes) -> str:
         )
         response.raise_for_status()
         result = response.json()
-        return result["choices"][0]["message"]["content"]
+        content = result["choices"][0]["message"].get("content", "")
+        logger.info(f"OpenRouter response: {content[:200]}...")
+        if not content.strip():
+            # Проверяем reasoning
+            reasoning = result["choices"][0]["message"].get("reasoning", "")
+            if reasoning:
+                return reasoning
+            return "Модель вернула пустой ответ. Попробуйте другое изображение."
+        return content
 
 
 # ─── Команды ───
