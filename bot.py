@@ -15,7 +15,7 @@ import httpx
 # ─── Настройки ───
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-VISION_MODEL = "nvidia/nemotron-nano-12b-v2-vl:free"
+VISION_MODEL = "nex-agi/nex-n2-pro:free"
 
 # ─── Логирование ───
 logging.basicConfig(
