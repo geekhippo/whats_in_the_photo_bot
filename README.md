@@ -1,6 +1,6 @@
 # 📸 What's in the Photo Bot
 
-Telegram-бот для анализа изображений с помощью AI.
+Telegram-бот для анализа изображений с помощью AI (OpenRouter).
 
 🤖 **Попробовать бота:** [@Whats_in_the_photo_bot](https://t.me/Whats_in_the_photo_bot)
 Отправьте боту фото или картинку — и получите подробное описание на русском языке.
