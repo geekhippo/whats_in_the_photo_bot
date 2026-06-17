@@ -1,20 +1,24 @@
 """
 What's in the Photo Bot — Telegram бот для описания изображений
-Использует Google Gemini 1.5 Flash для анализа фотографий
+Использует OpenRouter с бесплатными Vision-моделями
 """
 
 import os
 import logging
 import io
+import base64
 from PIL import Image
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
-from google import genai
-from google.genai import types
+import httpx
 
 # ─── Настройки ───
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+
+# Бесплатные Vision-модели на OpenRouter
+# Варианты: "google/gemini-2.0-flash-free", "meta-llama/llama-3.2-11b-vision-instruct:free"
+VISION_MODEL = "google/gemini-2.0-flash-free"
 
 # ─── Логирование ───
 logging.basicConfig(
@@ -22,9 +26,6 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
-
-# ─── Gemini ───
-client = genai.Client(api_key=GEMINI_API_KEY)
 
 # ─── Статистика ───
 STATS_FILE = "/app/data/stats.json"
@@ -60,6 +61,58 @@ def _record_usage(user_id, username=None):
     _save_stats(stats)
 
 
+async def analyze_image(image_bytes: bytes) -> str:
+    """Отправляет изображение в OpenRouter Vision API."""
+    # Конвертируем в base64
+    image_b64 = base64.b64encode(image_bytes).decode('utf-8')
+    
+    # Определяем MIME type
+    image = Image.open(io.BytesIO(image_bytes))
+    mime_type = "image/jpeg"
+    if image.format == "PNG":
+        mime_type = "image/png"
+    elif image.format == "WEBP":
+        mime_type = "image/webp"
+    elif image.format == "GIF":
+        mime_type = "image/gif"
+
+    data_url = f"data:{mime_type};base64,{image_b64}"
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        response = await client.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": VISION_MODEL,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "Опиши подробно что на этом изображении. Ответь на русском языке. "
+                                         "Если на изображении есть текст — также прочитай и переведи его. "
+                                         "Будь максимально детальным."
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": data_url
+                                }
+                            }
+                        ]
+                    }
+                ]
+            }
+        )
+        response.raise_for_status()
+        result = response.json()
+        return result["choices"][0]["message"]["content"]
+
+
 # ─── Команды ───
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -75,12 +128,12 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📋 Как пользоваться:\n\n"
         "1️⃣ Отправьте фото или картинку\n"
-        "2️⃣ Я проанализирую изображение через Gemini AI\n"
+        "2️⃣ Я проанализирую изображение через AI\n"
         "3️⃣ Получите подробное описание на русском языке\n\n"
         "⚠️ Лимиты:\n"
         "- Максимальный размер фото: 20 МБ\n"
         "- Поддерживаемые форматы: JPG, PNG, WEBP, GIF\n\n"
-        "🤖 Модель: Google Gemini 1.5 Flash"
+        f"🤖 Модель: {VISION_MODEL}"
     )
 
 
@@ -113,59 +166,30 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = msg.from_user
     _record_usage(user.id, user.username or user.first_name)
 
-    # Показываем что бот думает
     await msg.reply_text("🔍 Анализирую изображение...")
 
     try:
-        # Получаем фото в максимальном качестве
         photo = msg.photo[-1] if msg.photo else None
         document = msg.document if msg.document and msg.document.mime_type and msg.document.mime_type.startswith("image/") else None
 
         if not photo and not document:
-            await msg.reply_text("⚠️ Не удалось найти изображение. Попробуйте отправить фото ещё раз.")
+            await msg.reply_text("⚠️ Не удалось найти изображение.")
             return
 
-        # Скачиваем файл
         if photo:
             file = await context.bot.get_file(photo.file_id)
         else:
-            # Проверяем размер (лимит Gemini ~20MB)
             if document.file_size and document.file_size > 20 * 1024 * 1024:
                 await msg.reply_text("⚠️ Файл слишком большой (максимум 20 МБ).")
                 return
             file = await context.bot.get_file(document.file_id)
 
-        # Скачиваем в память
         image_bytes = await file.download_as_bytearray()
 
-        # Открываем изображение
-        image = Image.open(io.BytesIO(image_bytes))
-
-        # Конвертируем в RGB если нужно (для PNG с прозрачностью)
-        if image.mode in ('RGBA', 'LA', 'P'):
-            background = Image.new('RGB', image.size, (255, 255, 255))
-            if image.mode == 'P':
-                image = image.convert('RGBA')
-            background.paste(image, mask=image.split()[-1] if image.mode in ('RGBA', 'LA') else None)
-            image = background
-
-        # Отправляем в Gemini (новый API)
-        response = client.models.generate_content(
-            model='gemini-2.0-flash',
-            contents=[
-                "Опиши подробно что на этом изображении. Ответь на русском языке. "
-                "Если на изображении есть текст — также прочитай и переведи его. "
-                "Будь максимально детальным.",
-                types.Part.from_bytes(data=image_bytes, mime_type='image/jpeg')
-            ]
-        )
-
-        # Отправляем ответ
-        description = response.text if response.text else "Не удалось получить описание."
+        description = await analyze_image(image_bytes)
 
         # Telegram лимит — 4096 символов
         if len(description) > 4096:
-            # Разбиваем на части
             parts = []
             while len(description) > 4096:
                 split_pos = description.rfind('. ', 0, 4096)
@@ -182,6 +206,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await msg.reply_text("📸 Описание:\n\n" + description)
 
+    except httpx.HTTPStatusError as e:
+        logger.error(f"OpenRouter API error: {e.response.text}")
+        await msg.reply_text(f"❌ Ошибка API: {e.response.status_code}. Попробуйте позже.")
     except Exception as e:
         logger.error(f"Ошибка при обработке изображения: {e}")
         await msg.reply_text(f"❌ Ошибка при анализе изображения: {e}")
@@ -200,8 +227,8 @@ if __name__ == '__main__':
     if not TELEGRAM_TOKEN:
         logger.error("TELEGRAM_TOKEN не задан!")
         exit(1)
-    if not GEMINI_API_KEY:
-        logger.error("GEMINI_API_KEY не задан!")
+    if not OPENROUTER_API_KEY:
+        logger.error("OPENROUTER_API_KEY не задан!")
         exit(1)
 
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
